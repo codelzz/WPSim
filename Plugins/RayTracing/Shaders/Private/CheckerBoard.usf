@@ -1,0 +1,23 @@
+#include "/Engine/Public/Platform.ush"
+
+RWTexture2D<float4> RWOutputSurface;
+
+// Compute Shader Demo: return constant color 
+[numthreads(32,32,1)]
+void MainCS(
+    uint3 GroupID : SV_GroupID,
+    uint3 DispatchThreadId : SV_DispatchThreadID,
+    uint3 GroupThreadId : SV_GroupThreadID
+)
+{
+    // RWOutputSurface[DispatchThreadId.xy] = float4(1, 1, 1, 1);
+
+    //Set up some variables we are going to need
+    float sizeX, sizeY;
+    RWOutputSurface.GetDimensions(sizeX, sizeY);
+    
+    float2 iResolution = float2(sizeX, sizeY);
+    float2 uv = (DispatchThreadId.xy / iResolution.xy);
+    
+    RWOutputSurface[DispatchThreadId.xy] = float4(uv, 0, 1);
+}

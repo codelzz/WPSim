@@ -1,0 +1,18 @@
+#include "/Engine/Private/Common.ush"
+
+RWTexture2D<float4> OutputSurface;
+
+[numthreads(32, 32, 1)]
+void MainCS(
+    uint3 ThreadID: SV_DispatchThreadID
+)
+{
+    //Set up some variables we are going to need
+    float sizeX, sizeY;
+    OutputSurface.GetDimensions(sizeX, sizeY);
+    
+    float2 iResolution = float2(sizeX, sizeY);
+    float2 uv = (ThreadID.xy / iResolution.xy);
+    
+    OutputSurface[ThreadID.xy] = float4(uv, 0, 1);
+}
