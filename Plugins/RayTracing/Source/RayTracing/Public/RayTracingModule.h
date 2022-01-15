@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Modules/ModuleInterface.h"
 #include "Modules/ModuleManager.h"
 
 /**
@@ -15,3 +16,5 @@ public:
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
 };
+
+DECLARE_LOG_CATEGORY_EXTERN(LogRayTracing, Log, All);
