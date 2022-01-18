@@ -28,8 +28,6 @@ public class RayTracing : ModuleRules
 			new string[]
 			{
 				"Core",
-				"RHI",
-				"RenderCore",
 				// ... add other public dependencies that you statically link with here ...
 				// for MyShaderTest
 				"CoreUObject",
@@ -46,8 +44,13 @@ public class RayTracing : ModuleRules
 				"Slate",
 				"SlateCore",
 
+                // Lightmass
+				"Landscape",
+				"RenderCore",
+				"Renderer",
+				"RHI",
 				"Projects",
-				// ... add private dependencies that you statically link with here ...	
+				"IntelOIDN",
 			}
 			);
 		
