@@ -1,0 +1,11 @@
+#include "/Engine/Private/Common.ush"
+
+RWTexture2D<float4> OutputSurface;
+
+// LightmapPathTracing.usf LightmapPathTracingMainRG
+[shader("raygenderation")]
+void PathTracingMainRG()
+{
+    uint2 Index = DispatchRaysIndex().xy;
+    OutputSurface[Index] = float4(0, 1, 0, 1);
+}
