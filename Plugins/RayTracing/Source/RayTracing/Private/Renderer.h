@@ -1,48 +1,49 @@
 #pragma once
 
-#include "VirtualTexturing.h"
-#include "Scene/GeometryInterface.h"
+#include "Core/Private/HAL/Allocators/AnsiAllocator.h"
 
 namespace RayTracing
 {
-class FSceneRenderState;
 
-struct FTileRequest
-{
-	FRenderStateRef RenderState;
-	FTileVirtualCoordinates VirtualCoordinates;
-
-	FTileRequest(
-		FRenderStateRef RenderState,
-		FTileVirtualCoordinates VirtualCoordinates)
-		: RenderState(RenderState)
-		, VirtualCoordinates(VirtualCoordinates)
-	{}
-
-	~FTileRequest(){}
-
-	bool operator==(const FTileRequest& Rhs) const
+	// 13
+	class FSceneRenderState;
+	
+	struct FLightmapTileRequest
 	{
-		return RenderState == Rhs.RenderState && VirtualCoordinates == Rhs.VirtualCoordinates;
-	}
-};
+		FLightmapRenderStateRef RenderState;
+		FTileVirtualCoordinates VirtualCoordinates;
 
-class FRenderer : public IVirtualTextureFinalizer
-{
-public:
-	FRenderer(FSceneRenderState* InScene);
+		FLightmapTileRequest(
+			FLightmapRenderStateRef RenderState,
+			FTileVirtualCoordinates VirtualCoordinates)
+			: RenderState(RenderState)
+			, VirtualCoordinates(VirtualCoordinates)
+		{}
 
-	virtual void Finalize(FRHICommandListImmediate& RHICmdList) override;
+		~FLightmapTileRequest(){}
+	
+		// 34
+		bool operator==(const FLightmapTileRequest& Rhs) const
+		{
+			return RenderState == Rhs.RenderState && VirtualCoordinates == Rhs.VirtualCoordinates;
+		}
+	};
 
-	virtual ~FRenderer();
+	class FLightmapRenderer : public IVirtualTextureFinalizer
+	{
+	public:
+		FLightmapRenderer(FSceneRenderState* InScene);
 
-private:
-	int32 CurrentRevision = 0; // the revision at the moment
+		virtual void Finalize(FRHICommandListImmediate& RHICmdList) override;
 
-	FSceneRenderState* Scene;
+		virtual ~FLightmapRenderer();
 
-	TArray<FTileRequest> PendingTileRequests;
+	private:
+		int32 CurrentRevision = 0; // the revision at the moment
 
-};
+		FSceneRenderState* Scene;
 
+		TArray<FLightmapTileRequest> PendingTileRequests;
+
+	};
 }

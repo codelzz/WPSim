@@ -1,24 +1,28 @@
-#include "Common.h"
 #include "Renderer.h"
+#include "Common.h"
 #include "PathTracing.h"
 #include "Scene/Scene.h"
 #include "RenderGraphBuilder.h"
 #include "RenderGraphUtils.h"
+#include "Storage.h"
 
 namespace RayTracing
 {
-	FRenderer::FRenderer(FSceneRenderState* InScene)
+	// 169
+	FLightmapRenderer::FLightmapRenderer(FSceneRenderState* InScene)
 		: Scene(InScene)
 	{
 
 	}
 
-	FRenderer::~FRenderer()
+	// 221
+	FLightmapRenderer::~FLightmapRenderer()
 	{
 		// delete ThreadPool;
 		// send delegate
 	}
 
+	// 488
 	void FSceneRenderState::SetupRayTracingScene(int32 LODIndex)
 	{
 
@@ -29,28 +33,42 @@ namespace RayTracing
 	 *		for each tile performance PathTracing
 	 */
 	// 887
-	void FRenderer::Finalize(FRHICommandListImmediate& RHICmdList)
+	void FLightmapRenderer::Finalize(FRHICommandListImmediate& RHICmdList)
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(FRenderer::Finalize)
 
 		// 891-894
-		if (PendingTileRequests.Num() == 0)
-		{
-				return;
-		}
+		// [SKIP] If no pending tile requests exist
+		if (PendingTileRequests.Num() == 0) { return; }
 		
 		FMemMark Mark(FMemStack::Get()); // top-of-stack position in the memory stack
 
-		// [Why?] Upload & copy coverged tiles direcly
+		
 		// 899
+		// [Why?] Upload & copy coverged tiles direcly
+		/*
 		{
-			TArray<FTileRequest> TileUploadRquests = PendingTileRequests.FilterByPredicate(
-				[CurrentRevision = CurrentRevision](const FTileRequest& Tile)
+			// 900
+			TArray<FLightmapTileRequest> TileUploadRquests = PendingTileRequests.FilterByPredicate(
+				[CurrentRevision = CurrentRevision](const FLightmapTileRequest& Tile)
 			{
-					Tile.RenderState
 				return Tile.RenderState->DoesTileHaveValidCPUData(Tile.VirtualCoordinates, CurrentRevision) || (Tile.RenderState->RetrieveTileState(Tile.VirtualCoordinates).OngoingReadbackRevision == CurrentRevision);
 			});
+
+			// 906
+			if (TileUploadRquests.Num() > 0)
+			{
+
+			}
 		}
+		*/
+
+
+		// 1410
+		if (PendingTileRequests.Num() == 0) { return; }
+
+		// 1417
+		int32 MostCommonLODIndex = 0;
 
 
 
@@ -132,6 +150,5 @@ namespace RayTracing
 				}
 			}
 		}
-
 	}
 }

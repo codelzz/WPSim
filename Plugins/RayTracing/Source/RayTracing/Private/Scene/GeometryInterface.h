@@ -8,7 +8,7 @@ namespace RayTracing
 {
 
 using FLightmapRef = TEntityArray<class FLightmap>::EntityRefType;
-using FRenderStateRef = TEntityArray<class FRenderState>::EntityRefType;
+using FLightmapRenderStateRef = TEntityArray<class FLightmapRenderState>::EntityRefType;
 
 struct FGeometryRenderState
 {
@@ -20,7 +20,7 @@ struct FGeometryRenderState
 
 	bool bCastShadow;
 
-	TArray<FRenderStateRef> LODRenderStates;
+	TArray<FLightmapRenderState> LODRenderStates;
 };
 
 struct FGeometry

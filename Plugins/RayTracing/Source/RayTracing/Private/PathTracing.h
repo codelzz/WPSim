@@ -1,6 +1,6 @@
 #include "ShaderParameterStruct.h"
 #include "GlobalShader.h"
-
+#include "ShaderCompilerCore.h"
 
 /**
  *  Path Tracing Ray Generation Shader
@@ -25,7 +25,7 @@ class FPathTracingRGS : public FGlobalShader
 	/* 修改编译环境 */
 	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
-		OutEnvironment.CompilerFlags.Add(CFLAG_ForceDXC);
+		OutEnvironment.CompilerFlags.Add(ECompilerFlags::CFLAG_ForceDXC);
 	}
 
 	/* 定义参数结构 */

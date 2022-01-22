@@ -4,6 +4,7 @@
 
 #include "Common.h"
 #include "EntityArray.h"
+#include "Scene/GeometryInterface.h"
 #include "LightMap.h"
 #include "UObject/GCObjectScopeGuard.h"
 #include "VT/LightmapVirtualTexture.h"
@@ -38,7 +39,8 @@ namespace RayTracing
 				AllUncompressedTiles.RemoveNode(&Node, false);
 			}
 		}
-
+		
+		// [CHECK] maybe not necessary to use compress & decompress 
 		int64 Compress(bool bParallelCompression = false);
 		void Decompress();
 		void AllocateForWrite();
@@ -91,13 +93,14 @@ namespace RayTracing
 		TRefCountPtr<FLightMap2D> LightmapObject;
 		
 		// 90
-		int32 NumStationaryLightsPerShadowChannel[4] = { 0, 0, 0, 0 };
+		// int32 NumStationaryLightsPerShadowChannel[4] = { 0, 0, 0, 0 };
 	};
 
 	// 94
 	using FlightmapRef = TEntityArray<FLightmap>::EntityRefType;
-
-	class FRenderState : public FLightCacheInterface
+	
+	// 96
+	class FLightmapRenderState : public FLightCacheInterface
 	{
 	public:
 		// 99
@@ -106,8 +109,8 @@ namespace RayTracing
 			FString Name;
 			FIntPoint Size{ EForceInit::ForceInitToZero };
 			int32 MaxLevel = -1;
-			// FLightmapResourceCluster* ResourceCluster = nullptr;
-			FVector4 CoordinateScaleBias{ EForceInit::ForceInitToZero };
+			FLightmapResourceCluster* ResourceCluster = nullptr;
+			FVector4 LightMapCoordinateScaleBias{ EForceInit::ForceInitToZero };
 
 			bool IsValid()
 			{
@@ -117,9 +120,27 @@ namespace RayTracing
 		};
 
 		// 113
-		FRenderState(Initializer InInitializer, FGeometryInstanceRenderStateRef GeometryInstanceRef);
+		FLightmapRenderState(Initializer InInitializer, FGeometryInstanceRenderStateRef GeometryInstanceRef);
 
+		// 115
+		FIntPoint GetSize() const { return Size; }
+		int32 GetMaxLevel() const { return MaxLevel; }
+		uint32 GetNumTilesAcrossAllMipmapLevels() const { return TileStates.Num(); }
+		FIntPoint GetPaddedSizeInTiles() const
+		{
+			return FIntPoint(
+				FMath::DivideAndRoundUp(Size.X, GPreviewVirtualTileSize),
+				FMath::DivideAndRoundUp(Size.Y, GPreviewVirtualTileSize));
+		}
+		FIntPoint GetPaddedSize() const { return GetPaddedSizeInTiles() * GPreviewVirtualTileSize; }
+		FIntPoint GetPaddedPhysicalSize() const { return GetPaddedSizeInTiles() * GPreviewPhysicalTileSize; }
+		FIntPoint GetPaddedSizeAtMipLevel(int32 MipLevel) const { return GetPaddedSizeInTilesAtMipLevel(MipLevel) * GPreviewVirtualTileSize; }
+		FIntPoint GetPaddedSizeInTilesAtMipLevel(int32 MipLevel) const
+		{
+			return FIntPoint(FMath::DivideAndRoundUp(GetPaddedSizeInTiles().X, 1 << MipLevel), FMath::DivideAndRoundUp(GetPaddedSizeInTiles().Y, 1 << MipLevel));
+		}
 
+		// 132
 		struct FTileState
 		{
 			int32 Revision = -1;
@@ -141,13 +162,16 @@ namespace RayTracing
 			}
 		};
 
-		// 118
-		FIntPoint GetPaddedSizeInTiles() const
+		// 157
+		bool IsTileCoordinatesValid(FTileVirtualCoordinates Coords)
 		{
-			return FIntPoint(
-				FMath::DivideAndRoundUp(Size.X, GPreviewVirtualTileSize),
-				FMath::DivideAndRoundUp(Size.Y, GPreviewVirtualTileSize));
+			if (Coords.MipLevel > MaxLevel) { return false;}
+			FIntPoint SizeAtMipLevel(FMath::DivideAndRoundUp(GetPaddedSizeInTiles().X, 1 << Coords.MipLevel), FMath::DivideAndRoundUp(GetPaddedSizeInTiles().Y, 1 << Coords.MipLevel));
+
+			if (Coords.Position.X >= SizeAtMipLevel.X || Coords.Position.Y >= SizeAtMipLevel.Y) { return false;}
+			return true;
 		}
+
 
 		// 174
 		FTileState& RetrieveTileState(FTileVirtualCoordinates Coords)
@@ -166,11 +190,28 @@ namespace RayTracing
 
 		// 227
 		bool DoesTileHaveValidCPUData(FTileVirtualCoordinates Coords, int32 CurrentRevision);
+
+		// 229
+		FString Name;
+		TUniquePtr<FLightmapResourceCluster> ResourceCluster;
+		FVector4 LightMapCoordinateScaleBias;
+		uint32 DistributionPrefixSum = 0;
+
+		// 244
+		FGeometryInstanceRenderStateRef GeometryInstanceRef;
 	
-	// 295
-	private:
-		FIntPoint Size;
-		int32 MaxLevel;
-		TArray<FTileState> TileStates;
+		// 295
+		private:
+			FIntPoint Size;
+			int32 MaxLevel;
+			TArray<FTileState> TileStates;
 	};
+	
+	// 302
+	using FLightmapRenderStateRef = TEntityArray<FLightmapRenderState>::EntityRefType;
+}
+
+static uint32 GetTypeHash(const RayTracing::FRenderStateRef& Ref)
+{
+	return GetTypeHash(Ref.GetElementId());
 }
