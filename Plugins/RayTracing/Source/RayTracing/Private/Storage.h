@@ -1,4 +1,5 @@
 // Ref: LightmapStorage.h
+// Disable light related logic
 
 #pragma once
 
@@ -8,12 +9,12 @@
 #include "LightMap.h"
 #include "UObject/GCObjectScopeGuard.h"
 #include "VT/LightmapVirtualTexture.h"
+#include "Engine/MapBuildDataRegistry.h"
 // TBB suffers from extreme fragmentation problem in editor
 #include "Core/Private/HAL/Allocators/AnsiAllocator.h"
 
 namespace RayTracing
 {
-	// 17
 	struct FTileDataLayer
 	{
 		TArray<FLinearColor, FAnsiAllocator> Data;
@@ -39,15 +40,13 @@ namespace RayTracing
 				AllUncompressedTiles.RemoveNode(&Node, false);
 			}
 		}
-		
-		// [CHECK] maybe not necessary to use compress & decompress 
+
 		int64 Compress(bool bParallelCompression = false);
 		void Decompress();
 		void AllocateForWrite();
 		static void Evict();
 	};
 
-	// 49
 	struct FTileStorage
 	{
 		TUniquePtr<FTileDataLayer> CPUTextureData[(int32)ELightMapVirtualTextureType::Count];
@@ -67,7 +66,6 @@ namespace RayTracing
 		}
 	};
 
-	// 68
 	class FLightmap
 	{
 	public:
@@ -84,45 +82,37 @@ namespace RayTracing
 
 		FString Name;
 		FIntPoint Size;
-		
-		// 84
+
 		TUniquePtr<FLightmapResourceCluster> ResourceCluster;
 		TUniquePtr<FGCObjectScopeGuard> TextureUObjectGuard = nullptr;
 		ULightMapVirtualTexture2D* TextureUObject = nullptr;
 		TUniquePtr<FMeshMapBuildData> MeshMapBuildData;
 		TRefCountPtr<FLightMap2D> LightmapObject;
-		
-		// 90
-		// int32 NumStationaryLightsPerShadowChannel[4] = { 0, 0, 0, 0 };
+
+		int32 NumStationaryLightsPerShadowChannel[4] = { 0, 0, 0, 0 };
 	};
 
-	// 94
-	using FlightmapRef = TEntityArray<FLightmap>::EntityRefType;
-	
-	// 96
+	using FLightmapRef = TEntityArray<FLightmap>::EntityRefType;
+
 	class FLightmapRenderState : public FLightCacheInterface
 	{
 	public:
-		// 99
 		struct Initializer
 		{
 			FString Name;
 			FIntPoint Size{ EForceInit::ForceInitToZero };
 			int32 MaxLevel = -1;
 			FLightmapResourceCluster* ResourceCluster = nullptr;
-			FVector4 LightMapCoordinateScaleBias{ EForceInit::ForceInitToZero };
+			FVector4 LightmapCoordinateScaleBias{ EForceInit::ForceInitToZero };
 
 			bool IsValid()
 			{
-				// return Size.X > 0 && Size.Y > 0 && MaxLevel >= 0 && ResourceCluster != nullptr;
-				return Size.X > 0 && Size.Y > 0 && MaxLevel >= 0;
+				return Size.X > 0 && Size.Y > 0 && MaxLevel >= 0 && ResourceCluster != nullptr;
 			}
 		};
 
-		// 113
 		FLightmapRenderState(Initializer InInitializer, FGeometryInstanceRenderStateRef GeometryInstanceRef);
 
-		// 115
 		FIntPoint GetSize() const { return Size; }
 		int32 GetMaxLevel() const { return MaxLevel; }
 		uint32 GetNumTilesAcrossAllMipmapLevels() const { return TileStates.Num(); }
@@ -140,13 +130,14 @@ namespace RayTracing
 			return FIntPoint(FMath::DivideAndRoundUp(GetPaddedSizeInTiles().X, 1 << MipLevel), FMath::DivideAndRoundUp(GetPaddedSizeInTiles().Y, 1 << MipLevel));
 		}
 
-		// 132
 		struct FTileState
 		{
 			int32 Revision = -1;
 			int32 RenderPassIndex = 0;
 			int32 CPURevision = -1;
 			int32 OngoingReadbackRevision = -1;
+			bool bCanBeDenoised = false;
+			bool bWasDenoisedWithoutProximity = false;
 
 			void Invalidate()
 			{
@@ -158,22 +149,29 @@ namespace RayTracing
 			void InvalidateCPUData()
 			{
 				CPURevision = -1;
+				bCanBeDenoised = false;
+				bWasDenoisedWithoutProximity = false;
 				OngoingReadbackRevision = -1;
 			}
 		};
 
-		// 157
 		bool IsTileCoordinatesValid(FTileVirtualCoordinates Coords)
 		{
-			if (Coords.MipLevel > MaxLevel) { return false;}
+			if (Coords.MipLevel > MaxLevel)
+			{
+				return false;
+			}
+
 			FIntPoint SizeAtMipLevel(FMath::DivideAndRoundUp(GetPaddedSizeInTiles().X, 1 << Coords.MipLevel), FMath::DivideAndRoundUp(GetPaddedSizeInTiles().Y, 1 << Coords.MipLevel));
 
-			if (Coords.Position.X >= SizeAtMipLevel.X || Coords.Position.Y >= SizeAtMipLevel.Y) { return false;}
+			if (Coords.Position.X >= SizeAtMipLevel.X || Coords.Position.Y >= SizeAtMipLevel.Y)
+			{
+				return false;
+			}
+
 			return true;
 		}
 
-
-		// 174
 		FTileState& RetrieveTileState(FTileVirtualCoordinates Coords)
 		{
 			check(Coords.MipLevel <= MaxLevel);
@@ -188,30 +186,129 @@ namespace RayTracing
 			return TileStates[LinearIndex];
 		}
 
-		// 227
+		uint32 RetrieveTileStateIndex(FTileVirtualCoordinates Coords)
+		{
+			check(Coords.MipLevel <= MaxLevel);
+
+			int32 MipOffset = 0;
+			for (int32 MipLevel = 0; MipLevel < Coords.MipLevel; MipLevel++)
+			{
+				MipOffset += FMath::DivideAndRoundUp(GetPaddedSizeInTiles().X, 1 << MipLevel) * FMath::DivideAndRoundUp(GetPaddedSizeInTiles().Y, 1 << MipLevel);
+			}
+
+			int32 LinearIndex = MipOffset + Coords.Position.Y * FMath::DivideAndRoundUp(GetPaddedSizeInTiles().X, 1 << Coords.MipLevel) + Coords.Position.X;
+			return LinearIndex;
+		}
+
+		struct FTileRelevantLightSampleCountState
+		{
+			uint32 RoundRobinIndex = 0;
+			/*
+			TMap<FDirectionalLightRenderStateRef, int32> RelevantDirectionalLightSampleCount;
+			TMap<FPointLightRenderStateRef, int32> RelevantPointLightSampleCount;
+			TMap<FSpotLightRenderStateRef, int32> RelevantSpotLightSampleCount;
+			TMap<FRectLightRenderStateRef, int32> RelevantRectLightSampleCount;
+			*/
+		};
+
+		FTileRelevantLightSampleCountState& RetrieveTileRelevantLightSampleState(FTileVirtualCoordinates Coords)
+		{
+			check(Coords.MipLevel <= MaxLevel);
+
+			int32 MipOffset = 0;
+			for (int32 MipLevel = 0; MipLevel < Coords.MipLevel; MipLevel++)
+			{
+				MipOffset += FMath::DivideAndRoundUp(GetPaddedSizeInTiles().X, 1 << MipLevel) * FMath::DivideAndRoundUp(GetPaddedSizeInTiles().Y, 1 << MipLevel);
+			}
+
+			int32 LinearIndex = MipOffset + Coords.Position.Y * FMath::DivideAndRoundUp(GetPaddedSizeInTiles().X, 1 << Coords.MipLevel) + Coords.Position.X;
+			return TileRelevantLightSampleCountStates[LinearIndex];
+		}
+
+		bool IsTileGIConverged(FTileVirtualCoordinates Coords, int32 NumGISamples);
+		bool IsTileShadowConverged(FTileVirtualCoordinates Coords, int32 NumShadowSamples);
 		bool DoesTileHaveValidCPUData(FTileVirtualCoordinates Coords, int32 CurrentRevision);
 
-		// 229
 		FString Name;
 		TUniquePtr<FLightmapResourceCluster> ResourceCluster;
-		FVector4 LightMapCoordinateScaleBias;
+		FVector4 LightmapCoordinateScaleBias;
 		uint32 DistributionPrefixSum = 0;
 
-		// 244
+		// The virtual texture & producer that handles actual rendering
+		// Can't use a unique ptr, because ReleaseVirtualTextureProducer deletes the pointer
+		class FLightmapPreviewVirtualTexture* LightmapPreviewVirtualTexture = nullptr;
+
+		// Cached VT uniforms to avoid surprisingly high cost
+		FUintVector4 LightmapVTPackedPageTableUniform[2]; // VT (1 page table, 2x uint4)
+		FUintVector4 LightmapVTPackedUniform[5]; // VT (5 layers, 1x uint4 per layer)
+
+		TMap<FTileVirtualCoordinates, FTileStorage> TileStorage;
+
 		FGeometryInstanceRenderStateRef GeometryInstanceRef;
-	
-		// 295
-		private:
-			FIntPoint Size;
-			int32 MaxLevel;
-			TArray<FTileState> TileStates;
+
+		/*
+		TArray<FPointLightRenderStateRef> RelevantPointLights;
+		TArray<FSpotLightRenderStateRef> RelevantSpotLights;
+		TArray<FRectLightRenderStateRef> RelevantRectLights;
+
+		void AddRelevantLight(FDirectionalLightRenderStateRef Light)
+		{
+			// No-op as directional lights are always relevant, so the list is implied
+		}
+
+		void RemoveRelevantLight(FDirectionalLightRenderStateRef Light)
+		{
+			// No-op as directional lights are always relevant, so the list is implied
+		}
+
+		void AddRelevantLight(FPointLightRenderStateRef Light)
+		{
+			RelevantPointLights.Add(Light);
+		}
+
+		void RemoveRelevantLight(FPointLightRenderStateRef Light)
+		{
+			RelevantPointLights.Remove(Light);
+		}
+
+		void AddRelevantLight(FSpotLightRenderStateRef Light)
+		{
+			RelevantSpotLights.Add(Light);
+		}
+
+		void RemoveRelevantLight(FSpotLightRenderStateRef Light)
+		{
+			RelevantSpotLights.Remove(Light);
+		}
+
+		void AddRelevantLight(FRectLightRenderStateRef Light)
+		{
+			RelevantRectLights.Add(Light);
+		}
+
+		void RemoveRelevantLight(FRectLightRenderStateRef Light)
+		{
+			RelevantRectLights.Remove(Light);
+		}
+
+		virtual FLightInteraction GetInteraction(const class FLightSceneProxy* LightSceneProxy) const override
+		{
+			return FLightInteraction::LightMap();
+		}
+		*/
+
+	private:
+		FIntPoint Size;
+		int32 MaxLevel;
+		TArray<FTileState> TileStates;
+		TArray<FTileRelevantLightSampleCountState> TileRelevantLightSampleCountStates;
 	};
-	
-	// 302
+
 	using FLightmapRenderStateRef = TEntityArray<FLightmapRenderState>::EntityRefType;
+
 }
 
-static uint32 GetTypeHash(const RayTracing::FRenderStateRef& Ref)
+static uint32 GetTypeHash(const RayTracing::FLightmapRenderStateRef& Ref)
 {
 	return GetTypeHash(Ref.GetElementId());
 }
